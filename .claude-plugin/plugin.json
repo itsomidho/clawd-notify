@@ -1,0 +1,58 @@
+{
+  "name": "clawd-notify",
+  "version": "0.1.0",
+  "description": "Tells you when Claude is done or needs you: a desktop notification, a chime, and optionally a push to your phone",
+  "author": { "name": "Omid Hosseini", "url": "https://github.com/itsomidho" },
+  "homepage": "https://github.com/itsomidho/clawd-notify",
+  "repository": "https://github.com/itsomidho/clawd-notify",
+  "license": "MIT",
+  "keywords": ["notifications", "sound", "ntfy", "phone", "desktop"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "minSeconds": {
+      "type": "number",
+      "title": "Only turns longer than (seconds)",
+      "description": "Notify that Claude is done only when the turn ran at least this long, so quick answers you watched don't ping you.",
+      "default": 30
+    },
+    "onPermission": {
+      "type": "boolean",
+      "title": "When Claude needs approval",
+      "description": "Notify when Claude is waiting on a permission dialog.",
+      "default": true
+    },
+    "onIdle": {
+      "type": "boolean",
+      "title": "When Claude waits for input",
+      "description": "Notify when Claude has been waiting for your next prompt for a while.",
+      "default": false
+    },
+    "desktop": {
+      "type": "string",
+      "title": "Desktop notification",
+      "description": "auto: your terminal's notifications, falling back to the system's (notify-send, osascript). terminal: the terminal's only. system: the system's only. off: none.",
+      "options": ["auto", "terminal", "system", "off"],
+      "default": "auto"
+    },
+    "sound": {
+      "type": "string",
+      "title": "Sound",
+      "description": "A short chime when Claude is done, a different one when it needs you.",
+      "options": ["chime", "none"],
+      "default": "chime"
+    },
+    "phoneUrl": {
+      "type": "string",
+      "title": "Phone push URL",
+      "description": "An ntfy topic URL (https://ntfy.sh/<a-long-random-topic>, or your own ntfy server) to push to your phone. Empty: no phone push.",
+      "sensitive": true,
+      "default": ""
+    },
+    "phoneMinSeconds": {
+      "type": "number",
+      "title": "Phone: only turns longer than (seconds)",
+      "description": "Push 'done' to your phone only for turns at least this long. Approval requests always push.",
+      "default": 120
+    }
+  }
+}
