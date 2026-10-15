@@ -3,7 +3,7 @@ import type { On } from 'claude-code'
 
 // A Linux machine whose terminal has no notification channel: every command
 // and fetch the plugin makes is recorded and succeeds.
-function world(on: On) {
+function world(on: On, broken: readonly string[] = []) {
   const runs: string[][] = []
   const fetches: { url: string; body?: string; title?: string }[] = []
   const clock = mock.clock(on)
@@ -11,7 +11,9 @@ function world(on: On) {
   on('process.run', ($, e) => {
     runs.push([...e.argv])
     const stdout = e.argv[0] === 'uname' ? 'Linux\n' : ''
-    return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    const isBroken = broken.includes(e.argv[0] ?? '')
+    const stderr = isBroken ? `${e.argv[0]}: symbol lookup error: undefined symbol` : ''
+    return { value: { exitCode: isBroken ? 127 : 0, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('ui.notify', () => ({ value: { isSent: false as const, reason: 'no-channel' as const } }))
   on('http.fetch', ($, e) => {
@@ -57,4 +59,14 @@ test('sound off and desktop off leave only the phone', { options: { sound: 'none
   await w.clock.advance(1)
   expect(w.runs.filter(r => r[0] !== 'uname').length).toBe(0)
   expect(w.fetches.length).toBe(1)
+})
+
+test('a broken notify-send falls back to gdbus', async ($, on) => {
+  const w = world(on, ['notify-send'])
+  await $.turn.complete({ ...TURN, durationMs: 60_000 })
+  await w.clock.advance(1)
+  const commands = w.runs.map(r => r[0])
+  expect(commands).toContain('notify-send')
+  expect(commands).toContain('gdbus')
+  expect(w.runs.find(r => r[0] === 'gdbus')?.[12]).toBe("'Claude is done · app'")
 })

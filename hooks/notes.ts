@@ -130,16 +130,34 @@ function appleString(text: string): string {
   return '"' + text.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
 }
 
-// The system's own notification command, or null where there is none.
-export function systemCommand(platform: Platform, note: Note): string[] | null {
+// A GVariant string literal, as gdbus parses its arguments.
+function gvariantString(text: string): string {
+  return "'" + text.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'"
+}
+
+// The system's own notification commands, to try in turn; none where there
+// are none. On Linux, gdbus speaks to the notification service directly: it
+// still works where notify-send does not (an AppImage terminal, such as
+// Pane's, that puts its own older libnotify first on LD_LIBRARY_PATH).
+export function systemCommands(platform: Platform, note: Note): string[][] {
   if (platform === 'linux') {
-    const urgency = note.kind === 'permission' ? 'critical' : 'normal'
-    return ['notify-send', '--app-name=Claude Code', `--urgency=${urgency}`, note.title, note.body]
+    const isUrgent = note.kind === 'permission'
+    return [
+      ['notify-send', '--app-name=Claude Code', `--urgency=${isUrgent ? 'critical' : 'normal'}`, note.title, note.body],
+      [
+        'gdbus', 'call', '--session',
+        '--dest', 'org.freedesktop.Notifications',
+        '--object-path', '/org/freedesktop/Notifications',
+        '--method', 'org.freedesktop.Notifications.Notify',
+        gvariantString('Claude Code'), '0', "''", gvariantString(note.title), gvariantString(note.body),
+        '[]', `{'urgency': <byte ${isUrgent ? 2 : 1}>}`, '10000',
+      ],
+    ]
   }
   if (platform === 'darwin') {
-    return ['osascript', '-e', `display notification ${appleString(note.body)} with title ${appleString(note.title)}`]
+    return [['osascript', '-e', `display notification ${appleString(note.body)} with title ${appleString(note.title)}`]]
   }
-  return null
+  return []
 }
 
 // An ntfy publish: the body is the message, the headers its title and look.

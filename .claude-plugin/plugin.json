@@ -1,6 +1,6 @@
 {
   "name": "clawd-notify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tells you when Claude is done or needs you: a desktop notification, a chime, and optionally a push to your phone",
   "author": { "name": "Omid Hosseini", "url": "https://github.com/itsomidho" },
   "homepage": "https://github.com/itsomidho/clawd-notify",
@@ -45,7 +45,6 @@
       "type": "string",
       "title": "Phone push URL",
       "description": "An ntfy topic URL (https://ntfy.sh/<a-long-random-topic>, or your own ntfy server) to push to your phone. Empty: no phone push.",
-      "sensitive": true,
       "default": ""
     },
     "phoneMinSeconds": {

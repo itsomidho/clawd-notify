@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { duration, engineNote, gist, phoneRequest, readSettings, systemCommand, turnNote } from '../hooks/notes'
+import { duration, engineNote, gist, phoneRequest, readSettings, systemCommands, turnNote } from '../hooks/notes'
 
 const s = readSettings({})
 const turn = { answer: 'Done.', durationMs: 95_000, reason: 'answer', isAborted: false }
@@ -46,9 +46,12 @@ test("Claude Code's own notifications: approvals yes, idle by choice, mods' neve
 
 test('system commands and the phone request', () => {
   const note = { kind: 'permission' as const, title: 'Claude needs your approval · app', body: 'Say "yes"', isForPhone: true }
-  expect(systemCommand('linux', note)).toEqual(['notify-send', '--app-name=Claude Code', '--urgency=critical', note.title, note.body])
-  expect(systemCommand('darwin', note)?.[2]).toBe('display notification "Say \\"yes\\"" with title "Claude needs your approval · app"')
-  expect(systemCommand('other', note)).toBe(null)
+  const [notifySend, gdbus] = systemCommands('linux', note)
+  expect(notifySend).toEqual(['notify-send', '--app-name=Claude Code', '--urgency=critical', note.title, note.body])
+  expect(gdbus?.slice(9)).toEqual(["'Claude Code'", '0', "''", "'Claude needs your approval · app'", "'Say \"yes\"'", '[]', "{'urgency': <byte 2>}", '10000'])
+  expect(systemCommands('linux', { ...note, body: "it's" })[1]?.[13]).toBe("'it\\'s'")
+  expect(systemCommands('darwin', note)[0]?.[2]).toBe('display notification "Say \\"yes\\"" with title "Claude needs your approval · app"')
+  expect(systemCommands('other', note)).toEqual([])
   const req = phoneRequest(note)
   expect(req.headers.Title).toBe('Claude needs your approval - app')
   expect(req.headers.Priority).toBe('high')

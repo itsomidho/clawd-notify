@@ -9,7 +9,7 @@ import {
   phoneRequest,
   readSettings,
   soundFile,
-  systemCommand,
+  systemCommands,
   turnNote,
 } from './notes'
 import type { Note, Platform, Settings } from './notes'
@@ -23,6 +23,9 @@ const last = atom({ plugin: 'clawd-notify', key: 'last' } as const, null)
 let platform: Promise<Platform> | undefined
 let channel: string | undefined
 
+// What one channel came to: how it went out, or why it did not.
+type Outcome = { via?: string; problem?: string }
+
 function platformOf($: Engine): Promise<Platform> {
   platform ??= $.process
     .run(['uname', '-s'], { timeoutMs: 3000 })
@@ -31,86 +34,101 @@ function platformOf($: Engine): Promise<Platform> {
   return platform
 }
 
-async function run($: Engine, argv: string[]): Promise<boolean> {
+// Runs a command; on failure, says why in a few words.
+async function run($: Engine, argv: string[]): Promise<string | undefined> {
   try {
-    return (await $.process.run(argv, { timeoutMs: 10_000 })).exitCode === 0
-  } catch {
-    return false
+    const r = await $.process.run(argv, { timeoutMs: 10_000 })
+    if (r.exitCode === 0) return undefined
+    const said = (r.stderr.trim() || r.stdout.trim()).split('\n')[0] ?? ''
+    return `${argv[0]} exited ${r.exitCode}${said === '' ? '' : `: ${said.slice(0, 120)}`}`
+  } catch (error) {
+    return `${argv[0]} could not run${error instanceof Error ? `: ${error.message.slice(0, 80)}` : ''}`
   }
 }
 
-async function system($: Engine, note: Note): Promise<boolean> {
-  const argv = systemCommand(await platformOf($), note)
-  return argv !== null && (await run($, argv))
+// Tries each command in turn; the first that works is the one used.
+async function firstThatRuns($: Engine, commands: string[][]): Promise<Outcome> {
+  const problems: string[] = []
+  for (const argv of commands) {
+    const problem = await run($, argv)
+    if (problem === undefined) return { via: argv[0] }
+    problems.push(problem)
+  }
+  return { problem: problems.length > 0 ? problems.join('; ') : 'no command for this platform' }
 }
 
-async function terminal($: Engine, note: Note): Promise<'sent' | 'bell' | 'none'> {
+async function system($: Engine, note: Note): Promise<Outcome> {
+  return firstThatRuns($, systemCommands(await platformOf($), note))
+}
+
+async function terminal($: Engine, note: Note): Promise<Outcome & { isBell?: boolean }> {
   try {
     const r = await $.ui.notify(note.body, { title: note.title })
-    if (!r.isSent) return 'none'
+    if (!r.isSent) return { problem: `terminal: ${r.reason}` }
     channel = r.channel
-    return r.channel === 'terminal_bell' ? 'bell' : 'sent'
-  } catch {
-    return 'none'
+    return r.channel === 'terminal_bell' ? { isBell: true, problem: 'terminal: a bell only' } : { via: r.channel }
+  } catch (error) {
+    return { problem: `terminal: ${error instanceof Error ? error.message.slice(0, 80) : 'refused'}` }
   }
 }
 
-async function desktop($: Engine, settings: Settings, note: Note): Promise<string | undefined> {
+async function desktop($: Engine, settings: Settings, note: Note): Promise<Outcome> {
   const mode = settings.desktop
-  if (mode === 'off') return undefined
-  if (mode === 'system') return (await system($, note)) ? 'system' : undefined
+  if (mode === 'off') return {}
+  if (mode === 'system') return system($, note)
   // Claude Code already sends its own permission and idle notifications
   // through the terminal's channel; add the system's only where it has none.
   if (note.kind === 'permission' || note.kind === 'idle') {
     const hasChannel = channel !== undefined && channel !== 'terminal_bell'
-    return mode === 'auto' && !hasChannel && (await system($, note)) ? 'system' : undefined
+    return mode === 'auto' && !hasChannel ? system($, note) : {}
   }
-  const how = await terminal($, note)
-  if (how === 'sent') return channel
-  return mode === 'auto' && (await system($, note)) ? 'system' : how === 'bell' ? 'bell' : undefined
+  const t = await terminal($, note)
+  if (t.via !== undefined || mode === 'terminal') return t.isBell ? { via: 'bell' } : t
+  const s = await system($, note)
+  if (s.via !== undefined) return s
+  return t.isBell ? { via: 'bell', problem: s.problem } : { problem: `${t.problem}; ${s.problem}` }
 }
 
-async function sound($: Engine, settings: Settings, note: Note): Promise<boolean> {
-  if (settings.sound === 'none') return false
+async function sound($: Engine, settings: Settings, note: Note): Promise<Outcome> {
+  if (settings.sound === 'none') return {}
   const file = soundFile(note.kind)
   if ((await platformOf($)) === 'linux') {
     // The engine's player is macOS's afplay: on Linux, the desktop's own.
-    for (const argv of linuxPlayers(`${$.plugin.root}/${file}`)) {
-      if (await run($, argv)) return true
-    }
-    return false
+    const r = await firstThatRuns($, linuxPlayers(`${$.plugin.root}/${file}`))
+    return r.via !== undefined ? { via: 'sound' } : { problem: `sound: ${r.problem}` }
   }
   try {
     await $.audio.play({ asset: file })
-    return true
-  } catch {
-    return false
+    return { via: 'sound' }
+  } catch (error) {
+    return { problem: `sound: ${error instanceof Error ? error.message.slice(0, 80) : 'could not play'}` }
   }
 }
 
-async function phone($: Engine, settings: Settings, note: Note): Promise<boolean> {
-  if (!note.isForPhone || !isPhoneUrl(settings.phoneUrl)) return false
+async function phone($: Engine, settings: Settings, note: Note): Promise<Outcome> {
+  if (!note.isForPhone || settings.phoneUrl === '') return {}
+  if (!isPhoneUrl(settings.phoneUrl)) return { problem: 'phone: the URL is not a valid http(s) URL' }
   try {
-    return (await $.http.fetch(settings.phoneUrl, phoneRequest(note))).ok
-  } catch {
-    return false
+    const r = await $.http.fetch(settings.phoneUrl, phoneRequest(note))
+    return r.ok ? { via: 'phone' } : { problem: `phone: the server answered ${r.status}` }
+  } catch (error) {
+    return { problem: `phone: ${error instanceof Error ? error.message.slice(0, 80) : 'could not connect'}` }
   }
 }
 
-async function deliver($: Engine, settings: Settings, note: Note, force = false): Promise<NotifySent> {
-  const via: string[] = []
+async function deliver($: Engine, settings: Settings, note: Note, force = false): Promise<NotifySent & { problems: string[] }> {
+  const outcomes: Outcome[] = []
   if (force || !(await read($, isMuted))) {
-    const [d, s, p] = await Promise.all([desktop($, settings, note), sound($, settings, note), phone($, settings, note)])
-    if (d !== undefined) via.push(d)
-    if (s) via.push('sound')
-    if (p) via.push('phone')
+    outcomes.push(...(await Promise.all([desktop($, settings, note), sound($, settings, note), phone($, settings, note)])))
   }
+  const via = outcomes.flatMap(o => (o.via === undefined ? [] : [o.via]))
+  const problems = outcomes.flatMap(o => (o.problem === undefined ? [] : [o.problem]))
   const record: NotifySent = { kind: note.kind, title: note.title, body: note.body, at: await $.clock.now(), via }
   if (via.length > 0) {
     await update($, sent, n => n + 1)
     await update($, last, () => record)
   }
-  return record
+  return { ...record, problems }
 }
 
 // Sent after the hook has answered, so a slow network never holds the turn.
@@ -149,10 +167,10 @@ async function test($: Engine, settings: Settings): Promise<string> {
     isForPhone: true,
   }
   const r = await deliver($, settings, note, true)
-  const badUrl = settings.phoneUrl !== '' && !isPhoneUrl(settings.phoneUrl) ? ' The phone URL is not a valid http(s) URL.' : ''
-  return r.via.length > 0
-    ? `Sent through: ${r.via.join(', ')}.${badUrl}`
-    : `Nothing could be sent: no terminal notification channel, no notify-send or osascript, no sound player, and no phone URL.${badUrl}`
+  const lines = [r.via.length > 0 ? `Sent through: ${r.via.join(', ')}.` : 'Nothing could be sent.']
+  if (r.problems.length > 0) lines.push('Not sent:', ...r.problems.map(p => `  ${p}`))
+  if (settings.phoneUrl === '') lines.push('Phone: off (set a phone push URL in /config).')
+  return lines.join('\n')
 }
 
 export const register: Register = (on, options) => {

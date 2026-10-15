@@ -30,7 +30,7 @@ Under `/config` → clawd-notify:
 | When Claude waits for input | off | |
 | Desktop notification | auto | `auto`: your terminal's notifications (iTerm2, kitty, Ghostty), or the system's where it has none (`notify-send` on Linux, `osascript` on macOS). `terminal`, `system` or `off` to pick one |
 | Sound | chime | `none` to turn it off. Played with `afplay` on macOS and `paplay`, `pw-play` or `aplay` on Linux |
-| Phone push URL | (none) | An [ntfy](https://ntfy.sh) topic URL; kept in secure storage, not in settings.json |
+| Phone push URL | (none) | An [ntfy](https://ntfy.sh) topic URL, stored in your local `settings.json` |
 | Phone: only turns longer than (seconds) | 120 | Approval requests always push |
 
 ### Your phone
@@ -49,6 +49,7 @@ Under `/config` → clawd-notify:
 
 - **No double notifications.** Claude Code already sends its own "needs permission" notification through terminals that support it. clawd-notify then adds only the sound and the phone push. It adds a system notification only where your terminal has no notification channel.
 - **No sound on Linux?** Install `pulseaudio-utils` (for `paplay`) or `pipewire-bin` (for `pw-play`).
+- **No desktop notification on Linux?** clawd-notify tries `notify-send`, then talks to the notification service directly with `gdbus`. The second route still works where `notify-send` breaks, such as inside an AppImage terminal that ships an older libnotify. `/notify test` says why each channel failed.
 - **Notifications are sent after the turn ends.** A slow network never holds up Claude.
 - **Organization-managed Claude Code:** the approval and waiting-for-input notifications come from Claude Code's notification event. Where an organization manages Claude Code, that event only reaches plugins the organization lists. "Done" notifications work everywhere.
 
