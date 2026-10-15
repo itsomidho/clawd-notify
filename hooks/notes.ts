@@ -23,7 +23,16 @@ export type Note = {
   isForPhone: boolean
 }
 
-export type Platform = 'linux' | 'darwin' | 'other'
+export type Platform = 'linux' | 'darwin' | 'windows' | 'other'
+
+// What `uname -s` says, or undefined where uname could not run.
+export function platformFrom(uname: string | undefined, os: string | undefined): Platform {
+  const name = (uname ?? '').trim()
+  if (name === 'Linux') return 'linux'
+  if (name === 'Darwin') return 'darwin'
+  if (/^(MINGW|MSYS|CYGWIN)/.test(name) || os === 'Windows_NT') return 'windows'
+  return 'other'
+}
 
 const DESKTOPS: readonly Desktop[] = ['auto', 'terminal', 'system', 'off']
 
@@ -173,6 +182,101 @@ export function phoneRequest(note: Note): { method: string; headers: Record<stri
       Priority: note.kind === 'permission' ? 'high' : 'default',
     },
     body: note.body,
+  }
+}
+
+// ---------- whether the desktop shows what it is sent ----------
+
+const NOTIFICATIONS = ['--dest', 'org.freedesktop.Notifications', '--object-path', '/org/freedesktop/Notifications']
+
+export const SERVER_INFO = ['gdbus', 'call', '--session', ...NOTIFICATIONS, '--method', 'org.freedesktop.Notifications.GetServerInformation']
+
+export type Server = { name: string; vendor: string }
+
+// GetServerInformation's answer, `('cinnamon', 'GNOME', '6.6.9', '1.2')`.
+export function parseServer(out: string): Server | undefined {
+  const m = out.match(/\(\s*'([^']*)'\s*,\s*'([^']*)'/)
+  return m === null ? undefined : { name: m[1] ?? '', vendor: m[2] ?? '' }
+}
+
+// Whether a failed GetServerInformation means no server is there at all
+// (rather than gdbus missing, which says nothing about the desktop).
+export function isNoServer(stderr: string): boolean {
+  return /not provided by any \.service|ServiceUnknown|NameHasNoOwner/i.test(stderr)
+}
+
+// One question to put to the desktop: hidden when `isHidden(stdout)`.
+// A probe whose command fails or is missing answers nothing.
+export type Probe = { argv: string[]; isHidden: (out: string) => boolean; reason: string }
+
+const isTrue = (out: string) => out.trim() === 'true'
+
+// The Do Not Disturb switches of the notification server that answered, and
+// the spec's own `Inhibited` property, which any server may carry (Plasma does).
+export function bannerProbes(server: Server): Probe[] {
+  const id = `${server.name} ${server.vendor}`.toLowerCase()
+  const probes: Probe[] = [
+    {
+      argv: ['gdbus', 'call', '--session', ...NOTIFICATIONS, '--method', 'org.freedesktop.DBus.Properties.Get', 'org.freedesktop.Notifications', 'Inhibited'],
+      isHidden: out => /<true>/.test(out),
+      reason: 'your notification server is set to Do Not Disturb',
+    },
+  ]
+  if (id.includes('gnome-shell')) {
+    probes.push({
+      argv: ['gsettings', 'get', 'org.gnome.desktop.notifications', 'show-banners'],
+      isHidden: out => out.trim() === 'false',
+      reason: "GNOME's Do Not Disturb is on: turn it off in the clock menu, or in Settings → Notifications",
+    })
+  } else if (id.includes('cinnamon')) {
+    probes.push({
+      argv: ['gsettings', 'get', 'org.cinnamon.desktop.notifications', 'display-notifications'],
+      isHidden: out => out.trim() === 'false',
+      reason: "Cinnamon's notifications are turned off: System Settings → Notifications → Enable notifications",
+    })
+  } else if (id.includes('mate')) {
+    probes.push({
+      argv: ['gsettings', 'get', 'org.mate.NotificationDaemon', 'do-not-disturb'],
+      isHidden: isTrue,
+      reason: "MATE's Do Not Disturb is on: turn it off in the notification settings",
+    })
+  } else if (id.includes('xfce')) {
+    probes.push({
+      argv: ['xfconf-query', '-c', 'xfce4-notifyd', '-p', '/do-not-disturb'],
+      isHidden: isTrue,
+      reason: "Xfce's Do Not Disturb is on: turn it off in the notifications plugin or Settings → Notifications",
+    })
+  } else if (id.includes('dunst')) {
+    probes.push({
+      argv: ['dunstctl', 'is-paused'],
+      isHidden: isTrue,
+      reason: 'dunst is paused: run `dunstctl set-paused false`',
+    })
+  } else if (id.includes('mako')) {
+    probes.push({
+      argv: ['makoctl', 'mode'],
+      isHidden: out => out.split('\n').some(m => m.trim() === 'do-not-disturb'),
+      reason: 'mako is in do-not-disturb mode: run `makoctl mode -r do-not-disturb`',
+    })
+  } else if (id.includes('swaync') || id.includes('swaynotificationcenter')) {
+    probes.push({
+      argv: ['swaync-client', '--get-dnd', '--skip-wait'],
+      isHidden: isTrue,
+      reason: "SwayNC's Do Not Disturb is on: run `swaync-client --toggle-dnd`",
+    })
+  }
+  return probes
+}
+
+// macOS keeps the active Focus in ~/Library/DoNotDisturb/DB/Assertions.json:
+// a Focus is on while it holds an assertion record.
+export function isMacFocusOn(json: string): boolean | undefined {
+  try {
+    const data: unknown = JSON.parse(json)
+    const entries = (data as { data?: { storeAssertionRecords?: unknown[] }[] }).data ?? []
+    return entries.some(e => Array.isArray(e.storeAssertionRecords) && e.storeAssertionRecords.length > 0)
+  } catch {
+    return undefined
   }
 }
 

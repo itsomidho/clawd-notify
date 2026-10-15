@@ -42,7 +42,7 @@ Under `/config` → clawd-notify:
 ## Commands
 
 - `/notify`: the settings in effect, how many notifications were sent this session, and the last one
-- `/notify test`: sends a test through every channel and says which ones worked
+- `/notify test`: sends a test through every channel and says which ones worked, why any failed, and whether your desktop is hiding notifications (see below)
 - `/notify off` / `/notify on`: mute for this session (handy in a meeting)
 
 ## Good to know
@@ -50,6 +50,10 @@ Under `/config` → clawd-notify:
 - **No double notifications.** Claude Code already sends its own "needs permission" notification through terminals that support it. clawd-notify then adds only the sound and the phone push. It adds a system notification only where your terminal has no notification channel.
 - **No sound on Linux?** Install `pulseaudio-utils` (for `paplay`) or `pipewire-bin` (for `pw-play`).
 - **No desktop notification on Linux?** clawd-notify tries `notify-send`, then talks to the notification service directly with `gdbus`. The second route still works where `notify-send` breaks, such as inside an AppImage terminal that ships an older libnotify. `/notify test` says why each channel failed.
+- **Sent but not shown?** A notification can be delivered and still never appear: Do Not Disturb, Focus, or banners turned off in your desktop's settings. `/notify test` checks for this and names the switch:
+  - **Linux:** GNOME, Cinnamon, MATE and Xfce settings; KDE Plasma and any server with the standard Do Not Disturb flag; dunst, mako and SwayNC; and no notification service running at all.
+  - **macOS:** an active Focus mode. Notifications sent with `osascript` appear as "Script Editor", which macOS can mute separately.
+  - **Windows:** clawd-notify notifies only through your terminal there, and can't read Focus Assist, so the test just reminds you to check it.
 - **Notifications are sent after the turn ends.** A slow network never holds up Claude.
 - **Organization-managed Claude Code:** the approval and waiting-for-input notifications come from Claude Code's notification event. Where an organization manages Claude Code, that event only reaches plugins the organization lists. "Done" notifications work everywhere.
 

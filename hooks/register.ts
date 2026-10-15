@@ -3,8 +3,14 @@ import type { EngineInterface as Engine, Register } from 'claude-code'
 
 import type { NotifySent } from '../types'
 import {
+  SERVER_INFO,
+  bannerProbes,
   engineNote,
+  isMacFocusOn,
+  isNoServer,
   isPhoneUrl,
+  parseServer,
+  platformFrom,
   linuxPlayers,
   phoneRequest,
   readSettings,
@@ -26,11 +32,24 @@ let channel: string | undefined
 // What one channel came to: how it went out, or why it did not.
 type Outcome = { via?: string; problem?: string }
 
+async function detectPlatform($: Engine): Promise<Platform> {
+  let uname: string | undefined
+  try {
+    uname = (await $.process.run(['uname', '-s'], { timeoutMs: 3000 })).stdout
+  } catch {
+    uname = undefined
+  }
+  let os: string | undefined
+  try {
+    os = await $.env.get('OS')
+  } catch {
+    os = undefined
+  }
+  return platformFrom(uname, os)
+}
+
 function platformOf($: Engine): Promise<Platform> {
-  platform ??= $.process
-    .run(['uname', '-s'], { timeoutMs: 3000 })
-    .then(r => (r.stdout.trim() === 'Darwin' ? 'darwin' : r.stdout.trim() === 'Linux' ? 'linux' : 'other') as Platform)
-    .catch(() => 'other' as Platform)
+  platform ??= detectPlatform($)
   return platform
 }
 
@@ -55,6 +74,63 @@ async function firstThatRuns($: Engine, commands: string[][]): Promise<Outcome> 
     problems.push(problem)
   }
   return { problem: problems.length > 0 ? problems.join('; ') : 'no command for this platform' }
+}
+
+// A command's standard output, or undefined where it failed or is missing.
+async function output($: Engine, argv: string[]): Promise<{ stdout: string; stderr: string; isOk: boolean } | undefined> {
+  try {
+    const r = await $.process.run(argv, { timeoutMs: 5000 })
+    return { stdout: r.stdout, stderr: r.stderr, isOk: r.exitCode === 0 }
+  } catch {
+    return undefined
+  }
+}
+
+// Why the desktop would not show a notification it accepted, in a sentence
+// each: Do Not Disturb, Focus, banners turned off, or no server at all.
+async function hiddenBy($: Engine, settings: Settings, via: readonly string[]): Promise<string[]> {
+  if (settings.desktop === 'off') return []
+  const os = await platformOf($)
+  if (os === 'linux') {
+    const info = await output($, SERVER_INFO)
+    if (info === undefined) return []
+    if (!info.isOk) {
+      return isNoServer(info.stderr) ? ['No notification service is running on your desktop, so nothing can show.'] : []
+    }
+    const server = parseServer(info.stdout)
+    if (server === undefined) return []
+    const found: string[] = []
+    for (const probe of bannerProbes(server)) {
+      const r = await output($, probe.argv)
+      if (r !== undefined && r.isOk && probe.isHidden(r.stdout)) found.push(probe.reason)
+    }
+    return [...new Set(found)].map(reason => `Your desktop hides notifications: ${reason}.`)
+  }
+  if (os === 'darwin') {
+    const found: string[] = []
+    let home: string | undefined
+    try {
+      home = await $.env.get('HOME')
+    } catch {
+      home = undefined
+    }
+    if (home !== undefined) {
+      try {
+        const json = String(await $.fs.read(`${home}/Library/DoNotDisturb/DB/Assertions.json`))
+        if (isMacFocusOn(json) === true) found.push('A Focus mode is on, so macOS holds notifications back: turn it off in Control Center.')
+      } catch {
+        // Not readable (permissions, an older macOS): no answer.
+      }
+    }
+    if (via.includes('osascript')) {
+      found.push('macOS shows these as from "Script Editor": if none appeared, allow Script Editor in System Settings → Notifications.')
+    }
+    return found
+  }
+  if (os === 'windows') {
+    return ['On Windows, clawd-notify can only notify through your terminal, and cannot check Focus Assist: if nothing appeared, check that Focus Assist is off and that your terminal may notify.']
+  }
+  return []
 }
 
 async function system($: Engine, note: Note): Promise<Outcome> {
@@ -169,6 +245,8 @@ async function test($: Engine, settings: Settings): Promise<string> {
   const r = await deliver($, settings, note, true)
   const lines = [r.via.length > 0 ? `Sent through: ${r.via.join(', ')}.` : 'Nothing could be sent.']
   if (r.problems.length > 0) lines.push('Not sent:', ...r.problems.map(p => `  ${p}`))
+  const hidden = await hiddenBy($, settings, r.via)
+  if (hidden.length > 0) lines.push('But:', ...hidden.map(h => `  ${h}`))
   if (settings.phoneUrl === '') lines.push('Phone: off (set a phone push URL in /config).')
   return lines.join('\n')
 }
