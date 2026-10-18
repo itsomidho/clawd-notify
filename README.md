@@ -1,5 +1,7 @@
 # clawd-notify
 
+[![Latest release](https://img.shields.io/github/v/release/itsomidho/clawd-notify?label=release&color=7fbeb3)](https://github.com/itsomidho/clawd-notify/releases)
+
 Go do something else while Claude works. [Claude Code](https://claude.com/claude-code) tells you when it's **done**, when it **needs your approval**, and, if you like, when it's **waiting for you**. You get a desktop notification, a chime, and optionally a push to your phone.
 
 ![clawd-notify while you're away: a long turn ends with a desktop notification, a chime and a push to the phone; then a deploy waits on approval, and the desktop and the phone say so](docs/notify.gif)
