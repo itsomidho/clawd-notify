@@ -1,6 +1,6 @@
 {
   "name": "clawd-notify",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Tells you when Claude is done or needs you: a desktop notification, a chime, and optionally a push to your phone",
   "author": { "name": "Omid Hosseini", "url": "https://github.com/itsomidho" },
   "homepage": "https://github.com/itsomidho/clawd-notify",
