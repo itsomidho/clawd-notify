@@ -1,6 +1,6 @@
 # clawd-notify
 
-[![Latest release](https://img.shields.io/github/v/release/itsomidho/clawd-notify?label=release&color=7fbeb3)](https://github.com/itsomidho/clawd-notify/releases)
+[![Latest release](https://img.shields.io/github/v/release/itsomidho/clawd-notify?label=release&color=7fbeb3)](https://github.com/itsomidho/clawd-notify/releases) [![Wiki](https://img.shields.io/badge/docs-wiki-7fbeb3)](https://github.com/itsomidho/clawd-notify/wiki)
 
 Go do something else while Claude works. [Claude Code](https://claude.com/claude-code) tells you when it's **done**, when it **needs your approval**, and, if you like, when it's **waiting for you**. You get a desktop notification, a chime, and optionally a push to your phone.
 
@@ -58,6 +58,17 @@ Under `/config` → clawd-notify:
   - **Windows:** clawd-notify notifies only through your terminal there, and can't read Focus Assist, so the test just reminds you to check it.
 - **Notifications are sent after the turn ends.** A slow network never holds up Claude.
 - **Organization-managed Claude Code:** the approval and waiting-for-input notifications come from Claude Code's notification event. Where an organization manages Claude Code, that event only reaches plugins the organization lists. "Done" notifications work everywhere.
+
+## The clawd family
+
+clawd-notify is one of seven plugins in the [`itsomidho` marketplace](https://github.com/itsomidho/claude-plugins); each works on its own:
+
+- [clawd-statusbar](https://github.com/itsomidho/clawd-statusbar): a framed status bar under the prompt: context, usage limits with reset times, git state, MR/PR pipeline status, and Clawd frying an egg while Claude works
+- [clawd-tasks](https://github.com/itsomidho/clawd-tasks): a live task board: Claude's plan, and under each task the steps it took, how long it ran, the files it changed and the agents it started
+- [clawd-guard](https://github.com/itsomidho/clawd-guard): a safety net: stops risky shell commands, writes to secret files and leaked keys before they run
+- [clawd-git](https://github.com/itsomidho/clawd-git): a live git panel beside the conversation: the file tree, changes, colored diffs and the commit graph; marks what Claude changed, stages, commits and asks Claude to review
+- [clawd-logs](https://github.com/itsomidho/clawd-logs): watches your project's error logs (WordPress debug.log, nginx, any log file): new errors show above the prompt, grouped, with a Fix button, and Claude hears about the ones its own work caused
+- [clawd-debug](https://github.com/itsomidho/clawd-debug): a step debugger beside the conversation: set a breakpoint, let Claude run your code with test data, and step line by line while every variable and line value shows
 
 ## License
 
